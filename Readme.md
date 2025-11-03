@@ -1,18 +1,30 @@
-node-red-contrib-servicenow-table-api
+node-red-contrib-servicenow-table-api-oauth
 ========================
 
-A [Node-RED](https://www.nodered.org/) nodes to use Service Now Table API. [Table API doc](https://developer.servicenow.com/dev.do#!/reference/api/quebec/rest/c_TableAPI).
+A [Node-RED](https://www.nodered.org/) node collection to interact with ServiceNow Table API using OAuth 2.0 authentication. [Table API doc](https://developer.servicenow.com/dev.do#!/reference/api/quebec/rest/c_TableAPI).
 
 Install
 -------
 
-Run command on Node-RED installation directory.
+### Option 1: Using Node-RED Palette Manager (Recommended)
 
-	npm install node-red-contrib-servicenow-table-api
+1. Open your Node-RED editor
+2. Click on the menu (top right) → Manage palette
+3. Go to the "Install" tab
+4. Search for `node-red-contrib-servicenow-table-api-oauth`
+5. Click "Install"
 
-or run command for global installation.
+### Option 2: Using npm
 
-	npm install -g node-red-contrib-servicenow-table-api
+Run command on Node-RED installation directory:
+
+	npm install node-red-contrib-servicenow-table-api-oauth
+
+or run command for global installation:
+
+	npm install -g node-red-contrib-servicenow-table-api-oauth
+
+After installation, restart Node-RED to load the new nodes.
 
 Nodes
 -----
@@ -27,7 +39,68 @@ Nodes
 Config Nodes
 -----
 
-* Servicenow-config: Configure instance, user and password (basic auth)
+### servicenow-config
+
+Configuration node for OAuth 2.0 authentication with ServiceNow.
+
+**Required Parameters:**
+
+* **Name**: A descriptive name for this configuration
+* **Instance**: Your ServiceNow instance URL (e.g., `https://yourinstance.service-now.com`)
+* **Client ID**: OAuth client identifier from your ServiceNow OAuth application
+* **Client Secret**: OAuth client secret from your ServiceNow OAuth application
+* **Scope**: OAuth scope defining which ServiceNow tables/resources the token can access (e.g., `incident`, `useraccount`)
+
+**Important Notes:**
+
+* **Scope vs Topic**: The `scope` parameter (configured here) defines OAuth permissions for the token. The `msg.topic` parameter (set in each flow message) specifies which table to operate on. They are different concepts:
+  - Scope = "What can my token access?" (OAuth permission)
+  - Topic = "Which table am I working with right now?" (API endpoint)
+* A new OAuth token is automatically obtained for each API request
+* Make sure the scope includes all tables you plan to access in your flows
+
+Authentication
+--------------
+
+This package uses **OAuth 2.0** with the `client_credentials` grant type for authentication.
+
+### How it works:
+
+1. Configure the `servicenow-config` node with your OAuth credentials (client_id, client_secret, scope)
+2. When a message flows through any operation node (retrieve, create, modify, etc.):
+   - The node automatically requests an OAuth access token from ServiceNow (`POST /oauth_token.do`)
+   - ServiceNow responds with an access token valid for ~30 minutes
+   - The operation is executed using the Bearer token in the Authorization header
+3. Each API operation automatically handles token acquisition - no manual token management required
+
+### OAuth Flow Details:
+
+**Token Request:**
+```
+POST https://yourinstance.service-now.com/oauth_token.do
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id=YOUR_CLIENT_ID
+&client_secret=YOUR_CLIENT_SECRET
+&scope=YOUR_SCOPE
+```
+
+**Token Response:**
+```json
+{
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 1799,
+  "scope": "incident"
+}
+```
+
+**API Request:**
+```
+GET https://yourinstance.service-now.com/api/now/table/incident
+Authorization: Bearer ACCESS_TOKEN
+```
 
 Message parameters
 ------------------

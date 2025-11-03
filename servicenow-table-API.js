@@ -5,15 +5,75 @@ module.exports = function(RED) {
     function ServiceNowNode(n) {
         RED.nodes.createNode(this,n);
         var request = require("request");
+        var querystring = require("querystring");
         var node = this;
         this.instance= n.instance;
-        this.username= n.username;
-        this.password= n.password;
-        this.auth = 'Basic ' + Buffer.from(this.username + ':' + this.password).toString('base64');
+        this.client_id= n.client_id;
+        this.client_secret= n.client_secret;
+        this.scope= n.scope;
+
+        this.obtainToken = function(callback) {
+            // Normalize instance URL - remove trailing slash
+            var instanceUrl = node.instance.replace(/\/$/, '');
+
+            var tokenOptions = {
+                url: instanceUrl + '/oauth_token.do',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: querystring.stringify({
+                    grant_type: 'client_credentials',
+                    client_id: node.client_id,
+                    client_secret: node.client_secret,
+                    scope: node.scope
+                })
+            };
+
+            request(tokenOptions, function(err, res, body) {
+                if (err) {
+                    return callback(err);
+                }
+
+                if (res.statusCode === 200) {
+                    try {
+                        var tokenData = typeof body === 'string' ? JSON.parse(body) : body;
+                        callback(null, tokenData.access_token);
+                    } catch (parseError) {
+                        callback(parseError);
+                    }
+                } else {
+                    callback(new Error('OAuth token request failed with status ' + res.statusCode + ': ' + JSON.stringify(body)));
+                }
+            });
+        };
 
         this.doRequest = function(options, callback) {
-            request(options, callback);
-            }
+            node.obtainToken(function(err, accessToken) {
+                if (err) {
+                    return callback(err);
+                }
+
+                // Normalize instance URL - remove trailing slash
+                var instanceUrl = node.instance.replace(/\/$/, '');
+
+                // Convert baseUrl + uri to single url if using baseUrl
+                if (options.baseUrl && options.uri) {
+                    options.url = instanceUrl + '/' + options.uri.replace(/^\//, '');
+                    delete options.baseUrl;
+                    delete options.uri;
+                } else if (!options.url && options.uri) {
+                    options.url = instanceUrl + '/' + options.uri.replace(/^\//, '');
+                    delete options.uri;
+                }
+
+                // Add Bearer token to the original request options
+                options.headers = options.headers || {};
+                options.headers['Authorization'] = 'Bearer ' + accessToken;
+
+                request(options, callback);
+            });
+        };
     }
 
 // Node Retrieve Records
@@ -57,8 +117,7 @@ module.exports = function(RED) {
                 method: 'GET',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
                 server.doRequest(options, callback);
@@ -137,7 +196,7 @@ module.exports = function(RED) {
 
 // Node Retrieve a Record
 
-    
+
     function RetrieveRecord(config) {
         RED.nodes.createNode(this, config);
         var node = this;
@@ -167,8 +226,7 @@ module.exports = function(RED) {
                 method: 'GET',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
                 server.doRequest(options, callback);
@@ -234,12 +292,12 @@ module.exports = function(RED) {
 
 // Node Modify a Record
 
-    
+
     function ModifyRecord(config) {
         RED.nodes.createNode(this, config);
         var node = this;
         var server = RED.nodes.getNode(config.server);
-       
+
         // Initial sysparm with defaults values
         var sysparm = {
             sys_id: '' ,
@@ -260,8 +318,7 @@ module.exports = function(RED) {
                 method: 'PUT',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
                 server.doRequest(options, callback);
@@ -334,12 +391,12 @@ module.exports = function(RED) {
 
 // Node Patch a Record
 
-    
+
     function PatchRecord(config) {
         RED.nodes.createNode(this, config);
         var node = this;
         var server = RED.nodes.getNode(config.server);
-        
+
         // Initial sysparm with defaults values
         var sysparm = {
             sys_id: '' ,
@@ -351,7 +408,7 @@ module.exports = function(RED) {
             view: '',
             query_no_domain: false
         };
-        
+
 
         this.prepareRequest = function(table,sysparm,requestBody,callback) {
             var options = {
@@ -361,8 +418,7 @@ module.exports = function(RED) {
                 method: 'PUT',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
                 server.doRequest(options, callback);
@@ -435,7 +491,7 @@ module.exports = function(RED) {
 
 // Node Delete a Record
 
-    
+
     function DeleteRecord(config) {
         RED.nodes.createNode(this, config);
         var node = this;
@@ -447,7 +503,7 @@ module.exports = function(RED) {
             sys_id: '' ,
             query_no_domain: false
         };
-        
+
 
         this.prepareRequest = function(table,sysparm,callback) {
             var options = {
@@ -457,8 +513,7 @@ module.exports = function(RED) {
                 method: 'DELETE',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
                 server.doRequest(options, callback);
@@ -519,7 +574,7 @@ module.exports = function(RED) {
         RED.nodes.createNode(this, config);
         var node = this;
         var server = RED.nodes.getNode(config.server);
-       
+
         // Initial sysparm with defaults values
         var sysparm = {
             display_value: false ,
@@ -538,8 +593,7 @@ module.exports = function(RED) {
                 method: 'POST',
                 json: true,
                 headers: {
-                 'Content-Type': 'application/json',
-                 'Authorization': server.auth
+                 'Content-Type': 'application/json'
                 }
             };
 
